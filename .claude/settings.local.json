@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git config *)",
+      "Bash(git remote *)",
+      "Bash(python scripts/build_plugin.py 1.0.0)",
+      "Bash(python -c \"import zipfile; z=zipfile.ZipFile\\('docs/releases/agroexport.1.0.0.zip'\\); print\\('\\\\n'.join\\(sorted\\(z.namelist\\(\\)\\)\\)\\)\")",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)"
+    ]
+  }
+}

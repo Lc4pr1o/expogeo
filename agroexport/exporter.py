@@ -29,6 +29,9 @@ from qgis.PyQt.QtCore import QVariant
 
 DST_CRS = QgsCoordinateReferenceSystem("EPSG:4326")
 
+# Limite por bloco — será configurável em versão futura
+BLOCK_SIZE_LIMIT_MB = 2.5
+
 
 def ascii_safe(s):
     s = str(s) if s and str(s) not in ("NULL", "None") else ""
@@ -99,6 +102,89 @@ def collect_lines(layer):
             "pts":     pts,          # lista de (lat, lon)
         })
     return out
+
+
+# ── Estimativa de tamanho e divisão em blocos ─────────────────
+
+def estimate_lines_size_mb(lines):
+    """Estimativa de tamanho baseada em vértices (16 bytes cada) + overhead."""
+    total_verts = sum(len(gl['pts']) for gl in lines)
+    return (total_verts * 16 + len(lines) * 100) / (1024 * 1024)
+
+
+def estimate_layer_size_mb(layer):
+    """Estimativa de tamanho do shapefile baseada nos vértices da camada."""
+    total_bytes = 0
+    for feat in layer.getFeatures():
+        g = feat.geometry()
+        if g and not g.isEmpty():
+            total_bytes += count_verts(g) * 16 + 100
+    return total_bytes / (1024 * 1024)
+
+
+def _predominant_angle(lines_group):
+    """Ângulo médio predominante de um grupo de linhas (circular mean)."""
+    angles = []
+    for gl in lines_group:
+        if len(gl['pts']) >= 2:
+            p0, p1 = gl['pts'][0], gl['pts'][-1]
+            a = math.atan2(p1[1] - p0[1], p1[0] - p0[0]) % math.pi
+            angles.append(a)
+    if not angles:
+        return 0.0
+    sin_avg = sum(math.sin(2 * a) for a in angles) / len(angles)
+    cos_avg = sum(math.cos(2 * a) for a in angles) / len(angles)
+    return math.atan2(sin_avg, cos_avg) / 2
+
+
+def split_into_blocks(lines, nomenclature, limit_mb=None):
+    """
+    Divide linhas em blocos de até limit_mb MB.
+    Agrupa por talhão, ordena por ângulo predominante, empacota sequencialmente.
+    O corte ocorre apenas na divisa entre talhões.
+    Retorna: lista de dicts {name, talhoes, lines, size_mb, oversized}
+    """
+    if limit_mb is None:
+        limit_mb = BLOCK_SIZE_LIMIT_MB
+
+    # Agrupa por talhão
+    talhao_map = {}
+    for gl in lines:
+        key = gl['talhao'] or gl['fazenda'] or gl['name'] or 'SEM_TALHAO'
+        talhao_map.setdefault(key, []).append(gl)
+
+    # Ordena por ângulo predominante
+    sorted_talhoes = sorted(talhao_map.items(), key=lambda kv: _predominant_angle(kv[1]))
+
+    blocks = []
+    cur_talhoes, cur_lines, cur_mb = [], [], 0.0
+
+    for key, grp_lines in sorted_talhoes:
+        grp_mb = estimate_lines_size_mb(grp_lines)
+        oversized = grp_mb > limit_mb
+
+        if cur_lines and cur_mb + grp_mb > limit_mb:
+            blocks.append({'talhoes': list(cur_talhoes), 'lines': list(cur_lines),
+                           'size_mb': cur_mb, 'oversized': False})
+            cur_talhoes, cur_lines, cur_mb = [], [], 0.0
+
+        cur_talhoes.append(key)
+        cur_lines.extend(grp_lines)
+        cur_mb += grp_mb
+
+        if oversized:
+            blocks.append({'talhoes': list(cur_talhoes), 'lines': list(cur_lines),
+                           'size_mb': cur_mb, 'oversized': True})
+            cur_talhoes, cur_lines, cur_mb = [], [], 0.0
+
+    if cur_lines:
+        blocks.append({'talhoes': list(cur_talhoes), 'lines': list(cur_lines),
+                       'size_mb': cur_mb, 'oversized': False})
+
+    for i, b in enumerate(blocks, 1):
+        b['name'] = f'{nomenclature} {i}'
+
+    return blocks
 
 
 # ── Padronização de espaçamento de vértices ───────────────────

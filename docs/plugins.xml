@@ -1,24 +1,24 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <plugins>
-  <pyqgis_plugin name="AgroExport" version="1.0.4">
+  <pyqgis_plugin name="AgroExport" version="1.0.6">
     <description><![CDATA[Exporta linhas de orientação (guidance lines) para terminais agrícolas John Deere e PTx Trimble diretamente do QGIS.]]></description>
     <about><![CDATA[Exporta camadas de linhas do QGIS para os formatos nativos de terminais agrícolas:
 - John Deere Operations Center (Gen4 .gjson)
 - John Deere GreenStar 3 2630 (SpatialCatalog)
 - PTx Trimble Precision-IQ AgData (GFX-750/1050/1060)
 - PTx Trimble AgGPS legado (FMX, CFX-750, EZ-Guide)]]></about>
-    <version>1.0.4</version>
+    <version>1.0.6</version>
     <trusted>False</trusted>
     <qgis_minimum_version>3.16</qgis_minimum_version>
     <qgis_maximum_version>4.99</qgis_maximum_version>
     <homepage>https://github.com/Lc4pr1o/expogeo</homepage>
-    <file_name>agroexport.1.0.4.zip</file_name>
+    <file_name>agroexport.1.0.6.zip</file_name>
     <icon/>
     <author_name>Leonardo Malerbo</author_name>
-    <download_url>https://lc4pr1o.github.io/expogeo/releases/agroexport.1.0.4.zip</download_url>
+    <download_url>https://lc4pr1o.github.io/expogeo/releases/agroexport.1.0.6.zip</download_url>
     <uploaded_by>Lc4pr1o</uploaded_by>
-    <create_date>2026-05-01T16:51:34.000000Z</create_date>
-    <update_date>2026-05-01T16:51:34.000000Z</update_date>
+    <create_date>2026-05-01T18:03:24.000000Z</create_date>
+    <update_date>2026-05-01T18:03:24.000000Z</update_date>
     <experimental>False</experimental>
     <deprecated>False</deprecated>
     <server>False</server>
@@ -29,7 +29,19 @@
     <downloads>0</downloads>
     <average_vote>0</average_vote>
     <rating_votes>0</rating_votes>
-    <changelog><![CDATA[1.0.4 - Exportacao direta em pasta, sem compactacao
+    <changelog><![CDATA[1.0.6 - Importacao como ponto de entrada do fluxo
+* Aba Importacao movida para posicao 1
+* Abas Padronizacao, Classificacao e Exportacao ficam bloqueadas ate importar
+* Apos importar, plugin avanca automaticamente para Padronizacao
+* Se camadas ja existem no projeto, todas as abas sao liberadas normalmente
+1.0.5 - Divisao em blocos, importacao de shapefile e melhorias de interface
+* Campo Talhao na classificacao vira selector de nomenclatura (Parte/Bloco/Gleba)
+* Divisao automatica em blocos quando projeto excede 2.5 MB
+* Preview de blocos com reorganizacao de talhoes via drag-and-drop
+* Nova aba Importacao: carrega shapefile .shp diretamente no projeto
+* Indicador de tamanho estimado do projeto na aba Padronizacao
+* Janela de conclusao de exportacao simplificada (sem caminhos individuais)
+1.0.4 - Exportacao direta em pasta, sem compactacao
 * Arquivos exportados diretamente nas pastas Gen4/, GS3_2630/, AgData/, AgGPS/
 * Sem mais arquivos .zip individuais por formato
 * Mensagem "Exportando... aguarde." aparece durante o processo

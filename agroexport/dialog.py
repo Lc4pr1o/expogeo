@@ -8,7 +8,8 @@ from qgis.PyQt.QtWidgets import (
     QLabel, QComboBox, QDoubleSpinBox, QSpinBox, QPushButton, QFileDialog,
     QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox,
     QLineEdit, QGroupBox, QProgressBar, QMessageBox, QSizePolicy,
-    QFormLayout, QStyledItemDelegate, QApplication
+    QFormLayout, QStyledItemDelegate, QApplication, QScrollArea,
+    QListWidget, QAbstractItemView
 )
 from qgis.PyQt.QtCore import Qt, QThread, pyqtSignal, QVariant
 from qgis.core import (
@@ -21,10 +22,13 @@ from qgis.utils import iface
 from .exporter import (
     collect_lines, simplify_layer, count_verts,
     export_jd_zip, export_aggps_zip, export_agdata_zip,
-    export_gs3_zip, ascii_safe
+    export_gs3_zip, ascii_safe,
+    BLOCK_SIZE_LIMIT_MB, estimate_layer_size_mb, estimate_lines_size_mb,
+    split_into_blocks,
 )
 
 TIPOS = ["Curva", "AB", "Limite"]
+NOMENCLATURAS = ["Parte", "Bloco", "Gleba"]
 
 
 class TipoDelegate(QStyledItemDelegate):
@@ -63,6 +67,94 @@ class Worker(QThread):
         self.done.emit(result, stats)
 
 
+# ── Pré-visualização de blocos ─────────────────────────────────
+
+class BlockPreviewDialog(QDialog):
+    """Mostra blocos auto-gerados; permite reorganizar talhões via drag-and-drop."""
+
+    def __init__(self, blocks, talhao_to_lines, nomenclature, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Divisão em blocos — Pré-visualização")
+        self.setMinimumSize(700, 420)
+        self.resize(800, 480)
+        self._talhao_to_lines = talhao_to_lines
+        self._nomenclature = nomenclature
+        self._lists = []
+        self._build(blocks)
+
+    def _build(self, blocks):
+        L = QVBoxLayout(self)
+
+        n = len(blocks)
+        info = QLabel(
+            f"O projeto excede {BLOCK_SIZE_LIMIT_MB} MB e será exportado em "
+            f"<b>{n} bloco(s)</b>. "
+            "Arraste talhões entre as colunas para reorganizar antes de exportar."
+        )
+        info.setWordWrap(True)
+        L.addWidget(info)
+
+        cols_widget = QWidget()
+        cols_layout = QHBoxLayout(cols_widget)
+        cols_layout.setSpacing(8)
+
+        for block in blocks:
+            warn = " ⚠ acima do limite" if block.get('oversized') else ""
+            header = QLabel(
+                f"<b>{block['name']}</b><br>"
+                f"{block['size_mb']:.1f} MB{warn}"
+            )
+            header.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+            lst = QListWidget()
+            lst.setDragDropMode(QAbstractItemView.DragDropMode.DragDrop)
+            lst.setDefaultDropAction(Qt.DropAction.MoveAction)
+            lst.setMinimumWidth(140)
+            lst.setMaximumWidth(240)
+            for talhao in block['talhoes']:
+                lst.addItem(talhao)
+
+            col = QVBoxLayout()
+            col.addWidget(header)
+            col.addWidget(lst)
+            grp = QGroupBox()
+            grp.setLayout(col)
+            cols_layout.addWidget(grp)
+            self._lists.append(lst)
+
+        scroll = QScrollArea()
+        scroll.setWidget(cols_widget)
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        L.addWidget(scroll)
+
+        btns = QHBoxLayout()
+        btn_ok = QPushButton("Confirmar e Exportar")
+        btn_ok.setStyleSheet("font-weight:bold;padding:8px")
+        btn_ok.clicked.connect(self.accept)
+        btn_cancel = QPushButton("Cancelar")
+        btn_cancel.clicked.connect(self.reject)
+        btns.addStretch()
+        btns.addWidget(btn_ok)
+        btns.addWidget(btn_cancel)
+        L.addLayout(btns)
+
+    def get_final_blocks(self):
+        """Retorna blocos com linhas conforme estado atual das listas."""
+        result = []
+        for i, lst in enumerate(self._lists, 1):
+            block_lines = []
+            for j in range(lst.count()):
+                talhao = lst.item(j).text()
+                block_lines.extend(self._talhao_to_lines.get(talhao, []))
+            if block_lines:
+                result.append({
+                    'name': f'{self._nomenclature} {i}',
+                    'lines': block_lines,
+                })
+        return result
+
+
 # ── Diálogo principal ─────────────────────────────────────────
 
 class AgroDialog(QDialog):
@@ -70,20 +162,26 @@ class AgroDialog(QDialog):
         super().__init__(iface.mainWindow())
         self.setWindowTitle("AgroExport")
         self.setMinimumSize(580, 460)
-        self.resize(700, 580)
+        self.resize(700, 600)
         self.simplified = None
         self._build()
 
     def _build(self):
         root = QVBoxLayout(self)
-        tabs = QTabWidget()
-        tabs.addTab(self._tab_simpl(),  "1 · Padronização")
-        tabs.addTab(self._tab_class(),  "2 · Classificação")
-        tabs.addTab(self._tab_export(), "3 · Exportação")
-        root.addWidget(tabs)
+        self.tabs = QTabWidget()
+        self.tabs.addTab(self._tab_import(), "1 · Importação")
+        self.tabs.addTab(self._tab_simpl(),  "2 · Padronização")
+        self.tabs.addTab(self._tab_class(),  "3 · Classificação")
+        self.tabs.addTab(self._tab_export(), "4 · Exportação")
+        root.addWidget(self.tabs)
         self.status = QLabel("Pronto.")
         self.status.setStyleSheet("color:gray;font-size:11px")
         root.addWidget(self.status)
+
+        # Desabilita abas downstream enquanto nenhuma camada está disponível
+        has_layers = self.cb.count() > 0
+        for i in range(1, 4):
+            self.tabs.setTabEnabled(i, has_layers)
 
     # ── Aba 1: Padronização ─────────────────────────────────────
     def _tab_simpl(self):
@@ -91,15 +189,26 @@ class AgroDialog(QDialog):
         L = QVBoxLayout(w)
 
         g1 = QGroupBox("Camada de entrada")
-        r1 = QHBoxLayout(g1)
-        r1.addWidget(QLabel("Camada:"))
+        r1 = QVBoxLayout(g1)
+        row_cb = QHBoxLayout()
+        row_cb.addWidget(QLabel("Camada:"))
         self.cb = QComboBox()
         self.cb.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         for lid, lyr in QgsProject.instance().mapLayers().items():
             if isinstance(lyr, QgsVectorLayer) and lyr.geometryType() == QgsWkbTypes.LineGeometry:
                 self.cb.addItem(lyr.name(), lid)
-        r1.addWidget(self.cb)
+        row_cb.addWidget(self.cb)
+        r1.addLayout(row_cb)
+
+        # Melhoria 4: indicador de tamanho do projeto
+        self.lbl_size = QLabel("")
+        self.lbl_size.setStyleSheet("color:gray;font-size:11px")
+        r1.addWidget(self.lbl_size)
         L.addWidget(g1)
+
+        self.cb.currentIndexChanged.connect(self._update_size_label)
+        if self.cb.count() > 0:
+            self._update_size_label()
 
         g2 = QGroupBox("Simplificação (redução de vértices redundantes)")
         r2 = QHBoxLayout(g2)
@@ -184,10 +293,18 @@ class AgroDialog(QDialog):
         fb = QFormLayout(g_batch)
         self.le_cliente = QLineEdit()
         self.le_fazenda = QLineEdit()
-        self.le_talhao  = QLineEdit()
+
+        # Melhoria 1: Talhão vira seletor de nomenclatura de bloco
+        self.cb_talhao = QComboBox()
+        self.cb_talhao.addItems(NOMENCLATURAS)
+        self.cb_talhao.setToolTip(
+            "Define o nome base dos blocos na exportação.\n"
+            "Parte 1, Parte 2… / Bloco 1, Bloco 2… / Gleba 1, Gleba 2…"
+        )
+
         fb.addRow("Cliente:", self.le_cliente)
         fb.addRow("Fazenda:", self.le_fazenda)
-        fb.addRow("Talhão:",  self.le_talhao)
+        fb.addRow("Talhão:", self.cb_talhao)
         btn_batch = QPushButton("Aplicar a todas as linhas")
         btn_batch.clicked.connect(self._batch_fill)
         fb.addRow(btn_batch)
@@ -248,10 +365,51 @@ class AgroDialog(QDialog):
         L.addStretch()
         return w
 
+    # ── Aba 4: Importação ───────────────────────────────────────
+    def _tab_import(self):
+        w = QWidget()
+        L = QVBoxLayout(w)
+
+        g1 = QGroupBox("Arquivo de linhas de colheita (.shp)")
+        r1 = QHBoxLayout(g1)
+        self.le_import = QLineEdit()
+        self.le_import.setPlaceholderText("Selecione um arquivo .shp…")
+        r1.addWidget(self.le_import)
+        btn_browse = QPushButton("Procurar…")
+        btn_browse.clicked.connect(self._browse_shp)
+        r1.addWidget(btn_browse)
+        L.addWidget(g1)
+
+        btn_import = QPushButton("Importar camada")
+        btn_import.setStyleSheet("font-weight:bold;padding:6px")
+        btn_import.clicked.connect(self._import_shp)
+        L.addWidget(btn_import)
+
+        self.lbl_import_res = QLabel("")
+        self.lbl_import_res.setWordWrap(True)
+        L.addWidget(self.lbl_import_res)
+        L.addStretch()
+        return w
+
     # ── Lógica aba 1 ──────────────────────────────────────────
     def _cur_layer(self):
         lid = self.cb.currentData()
         return QgsProject.instance().mapLayer(lid) if lid else None
+
+    def _update_size_label(self):
+        lyr = self._cur_layer()
+        if not lyr:
+            self.lbl_size.setText("")
+            return
+        mb = estimate_layer_size_mb(lyr)
+        if mb > BLOCK_SIZE_LIMIT_MB:
+            self.lbl_size.setStyleSheet("color:orange;font-size:11px")
+            self.lbl_size.setText(
+                f"Tamanho estimado: {mb:.1f} MB — exportação será dividida em blocos"
+            )
+        else:
+            self.lbl_size.setStyleSheet("color:gray;font-size:11px")
+            self.lbl_size.setText(f"Tamanho estimado: {mb:.1f} MB")
 
     def _run_simpl(self):
         lyr = self._cur_layer()
@@ -259,7 +417,8 @@ class AgroDialog(QDialog):
             QMessageBox.warning(self, "AgroExport", "Selecione uma camada.")
             return
         if self.sp_min.value() >= self.sp_max.value():
-            QMessageBox.warning(self, "AgroExport", "O espaçamento mínimo deve ser menor que o máximo.")
+            QMessageBox.warning(self, "AgroExport",
+                                "O espaçamento mínimo deve ser menor que o máximo.")
             return
         self.pb.setValue(0)
         self.lbl_res.setText("Processando…")
@@ -325,14 +484,13 @@ class AgroDialog(QDialog):
     def _batch_fill(self):
         cliente = self.le_cliente.text().strip()
         fazenda = self.le_fazenda.text().strip()
-        talhao  = self.le_talhao.text().strip()
+        talhao  = self.cb_talhao.currentText()
         for row in range(self.tbl.rowCount()):
             if cliente:
                 self.tbl.setItem(row, 1, QTableWidgetItem(cliente))
             if fazenda:
                 self.tbl.setItem(row, 2, QTableWidgetItem(fazenda))
-            if talhao:
-                self.tbl.setItem(row, 3, QTableWidgetItem(talhao))
+            self.tbl.setItem(row, 3, QTableWidgetItem(talhao))
 
     def _apply(self):
         lyr = self._active_layer()
@@ -371,71 +529,131 @@ class AgroDialog(QDialog):
 
         fb_client = lines[0]["cliente"] or "Cliente"
         fb_farm   = lines[0]["fazenda"] or "Fazenda"
-        fb_field  = lines[0]["talhao"]  or "Talhao"
         for gl in lines:
             if not gl["cliente"]: gl["cliente"] = fb_client
             if not gl["fazenda"]: gl["fazenda"] = fb_farm
-            if not gl["talhao"]:  gl["talhao"]  = fb_field
+            if not gl["talhao"]:  gl["talhao"]  = gl["name"] or "Talhao"
+
+        nomenclature = self.cb_talhao.currentText()
+        total_mb = estimate_lines_size_mb(lines)
+
+        if total_mb > BLOCK_SIZE_LIMIT_MB:
+            # Mapa talhão → linhas para o diálogo de preview
+            talhao_to_lines = {}
+            for gl in lines:
+                key = gl['talhao'] or gl['fazenda'] or gl['name'] or '?'
+                talhao_to_lines.setdefault(key, []).append(gl)
+
+            blocks = split_into_blocks(lines, nomenclature)
+
+            oversized = [b for b in blocks if b.get('oversized')]
+            if oversized:
+                names = ", ".join(b['name'] for b in oversized)
+                QMessageBox.warning(
+                    self, "AgroExport",
+                    f"Os seguintes blocos excedem {BLOCK_SIZE_LIMIT_MB} MB "
+                    f"individualmente e não podem ser subdivididos:\n{names}"
+                )
+
+            dlg = BlockPreviewDialog(blocks, talhao_to_lines, nomenclature, self)
+            if dlg.exec() != QDialog.DialogCode.Accepted:
+                return
+            export_blocks = dlg.get_final_blocks()
+        else:
+            export_blocks = [{'name': None, 'lines': lines}]
 
         self.status.setText("Exportando... aguarde.")
         QApplication.processEvents()
 
-        msgs = []
+        errors = []
+        total_lines_exported = 0
 
-        if self.chk_jd.isChecked():
-            try:
-                folder, n_lines, n_groups = export_jd_zip(
-                    lines, out, "JohnDeere_GEN4",
-                    fb_client, fb_farm, fb_field
-                )
-                msgs.append(
-                    f"John Deere GEN4:\n"
-                    f"   {folder}\n"
-                    f"   {n_lines} linhas · {n_groups} grupo(s)\n"
-                    f"   Importar em: operationscenter.deere.com"
-                )
-            except Exception as e:
-                msgs.append(f"ERRO GEN4: {e}")
-            try:
-                folder = export_gs3_zip(
-                    lines, out, "JohnDeere",
-                    fb_client, fb_farm, fb_field
-                )
-                msgs.append(
-                    f"John Deere GS3_2630:\n"
-                    f"   {folder}\n"
-                    f"   Copiar pasta GS3_2630/ para o cartao SD"
-                )
-            except Exception as e:
-                msgs.append(f"ERRO GS3_2630: {e}")
+        for block in export_blocks:
+            block_lines = block['lines']
+            block_name  = block['name']
+            field_label = block_name or fb_farm
+            block_dir   = os.path.join(out, block_name) if block_name else out
+            if block_name:
+                os.makedirs(block_dir, exist_ok=True)
 
-        if self.chk_ptx.isChecked():
-            try:
-                folder = export_agdata_zip(
-                    lines, out, "PTX",
-                    fb_client, fb_farm, fb_field
-                )
-                msgs.append(
-                    f"PTX Trimble AgData:\n"
-                    f"   {folder}\n"
-                    f"   Copiar pasta AgData/ para USB › monitor › Importar"
-                )
-            except Exception as e:
-                msgs.append(f"ERRO AgData: {e}")
-            try:
-                folder = export_aggps_zip(
-                    lines, out, "PTX",
-                    fb_client, fb_farm, fb_field
-                )
-                msgs.append(
-                    f"PTX Trimble AgGPS:\n"
-                    f"   {folder}\n"
-                    f"   Copiar pasta AgGPS/ para o cartao SD"
-                )
-            except Exception as e:
-                msgs.append(f"ERRO AgGPS: {e}")
+            if self.chk_jd.isChecked():
+                try:
+                    export_jd_zip(block_lines, block_dir, "JohnDeere_GEN4",
+                                  fb_client, fb_farm, field_label)
+                except Exception as e:
+                    errors.append(f"GEN4: {e}")
+                try:
+                    export_gs3_zip(block_lines, block_dir, "JohnDeere",
+                                   fb_client, fb_farm, field_label)
+                except Exception as e:
+                    errors.append(f"GS3_2630: {e}")
 
-        self.lbl_exp.setText("\n\n".join(msgs))
-        self.status.setText("Exportacao concluida.")
-        QMessageBox.information(self, "AgroExport — Concluido", "\n\n".join(msgs))
+            if self.chk_ptx.isChecked():
+                try:
+                    export_agdata_zip(block_lines, block_dir, "PTX",
+                                      fb_client, fb_farm, field_label)
+                except Exception as e:
+                    errors.append(f"AgData: {e}")
+                try:
+                    export_aggps_zip(block_lines, block_dir, "PTX",
+                                     fb_client, fb_farm, field_label)
+                except Exception as e:
+                    errors.append(f"AgGPS: {e}")
 
+            total_lines_exported += len(block_lines)
+
+        # Melhoria 3: mensagem de conclusão limpa
+        n_blocks = len(export_blocks)
+        if n_blocks > 1:
+            bloco_info = (f"{n_blocks} blocos "
+                          f"({nomenclature} 1 a {nomenclature} {n_blocks})")
+        else:
+            bloco_info = "1 arquivo"
+
+        msg_parts = [
+            f"Projeto: {fb_client} / {fb_farm}",
+            f"Linhas exportadas: {total_lines_exported}",
+            f"Blocos gerados: {bloco_info}",
+        ]
+        if errors:
+            msg_parts.append("\nErros:\n" + "\n".join(f"  {e}" for e in errors))
+
+        msg = "\n".join(msg_parts)
+        self.lbl_exp.setText(msg)
+        self.status.setText("Exportação concluída.")
+        QMessageBox.information(self, "AgroExport — Concluído", msg)
+
+    # ── Lógica aba 4 ──────────────────────────────────────────
+    def _browse_shp(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Selecionar shapefile", "", "Shapefile (*.shp)"
+        )
+        if path:
+            self.le_import.setText(path)
+
+    def _import_shp(self):
+        path = self.le_import.text().strip()
+        if not path or not os.path.isfile(path):
+            QMessageBox.warning(self, "AgroExport", "Selecione um arquivo .shp válido.")
+            return
+        name = os.path.splitext(os.path.basename(path))[0]
+        lyr = QgsVectorLayer(path, name, "ogr")
+        if not lyr.isValid():
+            QMessageBox.warning(self, "AgroExport",
+                                "Não foi possível carregar o shapefile.")
+            return
+        QgsProject.instance().addMapLayer(lyr)
+        if lyr.geometryType() == QgsWkbTypes.LineGeometry:
+            self.cb.addItem(lyr.name(), lyr.id())
+            self.cb.setCurrentIndex(self.cb.count() - 1)
+
+        n = lyr.featureCount()
+        self.lbl_import_res.setText(
+            f"Camada '{name}' importada com {n} feições."
+        )
+        self.status.setText(f"Camada '{name}' adicionada — prossiga para Padronização.")
+
+        # Desbloqueia abas downstream e avança para Padronização
+        for i in range(1, 4):
+            self.tabs.setTabEnabled(i, True)
+        self.tabs.setCurrentIndex(1)

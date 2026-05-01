@@ -3,7 +3,7 @@ name=AgroExport
 qgisMinimumVersion=3.16
 qgisMaximumVersion=4.99
 description=Exporta linhas de orientação (guidance lines) para terminais agrícolas John Deere e PTx Trimble diretamente do QGIS.
-version=1.0.4
+version=1.0.6
 author=Leonardo Malerbo
 email=leonardo.cardosolc421@gmail.com
 about=Exporta camadas de linhas do QGIS para os formatos nativos de terminais agrícolas:
@@ -17,6 +17,18 @@ repository=https://github.com/Lc4pr1o/expogeo
 homepage=https://github.com/Lc4pr1o/expogeo
 
 changelog=
+    1.0.6 - Importacao como ponto de entrada do fluxo
+        * Aba Importacao movida para posicao 1
+        * Abas Padronizacao, Classificacao e Exportacao ficam bloqueadas ate importar
+        * Apos importar, plugin avanca automaticamente para Padronizacao
+        * Se camadas ja existem no projeto, todas as abas sao liberadas normalmente
+    1.0.5 - Divisao em blocos, importacao de shapefile e melhorias de interface
+        * Campo Talhao na classificacao vira selector de nomenclatura (Parte/Bloco/Gleba)
+        * Divisao automatica em blocos quando projeto excede 2.5 MB
+        * Preview de blocos com reorganizacao de talhoes via drag-and-drop
+        * Nova aba Importacao: carrega shapefile .shp diretamente no projeto
+        * Indicador de tamanho estimado do projeto na aba Padronizacao
+        * Janela de conclusao de exportacao simplificada (sem caminhos individuais)
     1.0.4 - Exportacao direta em pasta, sem compactacao
         * Arquivos exportados diretamente nas pastas Gen4/, GS3_2630/, AgData/, AgGPS/
         * Sem mais arquivos .zip individuais por formato

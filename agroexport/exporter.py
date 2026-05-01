@@ -140,9 +140,10 @@ def _predominant_angle(lines_group):
 def split_into_blocks(lines, nomenclature, limit_mb=None):
     """
     Divide linhas em blocos de até limit_mb MB.
-    Agrupa por talhão, ordena por ângulo predominante, empacota sequencialmente.
-    O corte ocorre apenas na divisa entre talhões.
-    Retorna: lista de dicts {name, talhoes, lines, size_mb, oversized}
+    - Agrupa por talhão, ordena por ângulo predominante.
+    - Talhões que cabem no limite ficam inteiros num bloco.
+    - Talhões maiores que o limite são sub-divididos sequencialmente.
+    Retorna: lista de dicts {name, talhoes, lines, size_mb}
     """
     if limit_mb is None:
         limit_mb = BLOCK_SIZE_LIMIT_MB
@@ -156,30 +157,40 @@ def split_into_blocks(lines, nomenclature, limit_mb=None):
     # Ordena por ângulo predominante
     sorted_talhoes = sorted(talhao_map.items(), key=lambda kv: _predominant_angle(kv[1]))
 
+    # Segmentos atômicos: talhões normais ficam inteiros; grandes são sub-divididos
+    segments = []
+    for key, grp_lines in sorted_talhoes:
+        grp_mb = estimate_lines_size_mb(grp_lines)
+        if grp_mb <= limit_mb:
+            segments.append({'label': key, 'lines': grp_lines, 'mb': grp_mb})
+        else:
+            chunk, chunk_mb = [], 0.0
+            for gl in grp_lines:
+                gl_mb = estimate_lines_size_mb([gl])
+                if chunk and chunk_mb + gl_mb > limit_mb:
+                    segments.append({'label': key, 'lines': chunk, 'mb': chunk_mb})
+                    chunk, chunk_mb = [], 0.0
+                chunk.append(gl)
+                chunk_mb += gl_mb
+            if chunk:
+                segments.append({'label': key, 'lines': chunk, 'mb': chunk_mb})
+
+    # Empacota segmentos em blocos
     blocks = []
     cur_talhoes, cur_lines, cur_mb = [], [], 0.0
 
-    for key, grp_lines in sorted_talhoes:
-        grp_mb = estimate_lines_size_mb(grp_lines)
-        oversized = grp_mb > limit_mb
-
-        if cur_lines and cur_mb + grp_mb > limit_mb:
+    for seg in segments:
+        if cur_lines and cur_mb + seg['mb'] > limit_mb:
             blocks.append({'talhoes': list(cur_talhoes), 'lines': list(cur_lines),
-                           'size_mb': cur_mb, 'oversized': False})
+                           'size_mb': cur_mb})
             cur_talhoes, cur_lines, cur_mb = [], [], 0.0
-
-        cur_talhoes.append(key)
-        cur_lines.extend(grp_lines)
-        cur_mb += grp_mb
-
-        if oversized:
-            blocks.append({'talhoes': list(cur_talhoes), 'lines': list(cur_lines),
-                           'size_mb': cur_mb, 'oversized': True})
-            cur_talhoes, cur_lines, cur_mb = [], [], 0.0
+        cur_talhoes.append(seg['label'])
+        cur_lines.extend(seg['lines'])
+        cur_mb += seg['mb']
 
     if cur_lines:
         blocks.append({'talhoes': list(cur_talhoes), 'lines': list(cur_lines),
-                       'size_mb': cur_mb, 'oversized': False})
+                       'size_mb': cur_mb})
 
     for i, b in enumerate(blocks, 1):
         b['name'] = f'{nomenclature} {i}'

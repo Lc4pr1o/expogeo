@@ -1,24 +1,24 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <plugins>
-  <pyqgis_plugin name="AgroExport" version="1.0.7">
+  <pyqgis_plugin name="AgroExport" version="1.0.8">
     <description><![CDATA[Exporta linhas de orientação (guidance lines) para terminais agrícolas John Deere e PTx Trimble diretamente do QGIS.]]></description>
     <about><![CDATA[Exporta camadas de linhas do QGIS para os formatos nativos de terminais agrícolas:
 - John Deere Operations Center (Gen4 .gjson)
 - John Deere GreenStar 3 2630 (SpatialCatalog)
 - PTx Trimble Precision-IQ AgData (GFX-750/1050/1060)
 - PTx Trimble AgGPS legado (FMX, CFX-750, EZ-Guide)]]></about>
-    <version>1.0.7</version>
+    <version>1.0.8</version>
     <trusted>False</trusted>
     <qgis_minimum_version>3.16</qgis_minimum_version>
     <qgis_maximum_version>4.99</qgis_maximum_version>
     <homepage>https://github.com/Lc4pr1o/expogeo</homepage>
-    <file_name>agroexport.1.0.7.zip</file_name>
+    <file_name>agroexport.1.0.8.zip</file_name>
     <icon/>
     <author_name>Leonardo Malerbo</author_name>
-    <download_url>https://lc4pr1o.github.io/expogeo/releases/agroexport.1.0.7.zip</download_url>
+    <download_url>https://lc4pr1o.github.io/expogeo/releases/agroexport.1.0.8.zip</download_url>
     <uploaded_by>Lc4pr1o</uploaded_by>
-    <create_date>2026-05-01T18:21:33.000000Z</create_date>
-    <update_date>2026-05-01T18:21:33.000000Z</update_date>
+    <create_date>2026-05-01T18:41:21.000000Z</create_date>
+    <update_date>2026-05-01T18:41:21.000000Z</update_date>
     <experimental>False</experimental>
     <deprecated>False</deprecated>
     <server>False</server>
@@ -29,7 +29,13 @@
     <downloads>0</downloads>
     <average_vote>0</average_vote>
     <rating_votes>0</rating_votes>
-    <changelog><![CDATA[1.0.7 - Multi-selecao de shapefiles e indicadores de tamanho
+    <changelog><![CDATA[1.0.8 - Correcoes de importacao, talhao e divisao em blocos
+* Multiplos .shp sao mesclados em uma unica camada ao importar
+* Campo Talhao na classificacao voltou a ser texto livre (ex: 001, Gleba Norte)
+* Nomenclatura dos blocos (Parte/Bloco/Gleba) movida para aba Exportacao
+* Algoritmo de blocos sub-divide talhoes grandes sequencialmente (sem travar)
+* Removido aviso de "talhao acima do limite" - todos os casos sao tratados
+1.0.7 - Multi-selecao de shapefiles e indicadores de tamanho
 * Plugin abre sem exigir camadas pre-carregadas no projeto
 * Importacao aceita varios .shp de uma vez (multi-selecao)
 * Aba Importacao exibe tamanho estimado de cada camada importada

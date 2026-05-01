@@ -3,7 +3,7 @@ name=AgroExport
 qgisMinimumVersion=3.16
 qgisMaximumVersion=4.99
 description=Exporta linhas de orientação (guidance lines) para terminais agrícolas John Deere e PTx Trimble diretamente do QGIS.
-version=1.0.7
+version=1.0.8
 author=Leonardo Malerbo
 email=leonardo.cardosolc421@gmail.com
 about=Exporta camadas de linhas do QGIS para os formatos nativos de terminais agrícolas:
@@ -17,6 +17,12 @@ repository=https://github.com/Lc4pr1o/expogeo
 homepage=https://github.com/Lc4pr1o/expogeo
 
 changelog=
+    1.0.8 - Correcoes de importacao, talhao e divisao em blocos
+        * Multiplos .shp sao mesclados em uma unica camada ao importar
+        * Campo Talhao na classificacao voltou a ser texto livre (ex: 001, Gleba Norte)
+        * Nomenclatura dos blocos (Parte/Bloco/Gleba) movida para aba Exportacao
+        * Algoritmo de blocos sub-divide talhoes grandes sequencialmente (sem travar)
+        * Removido aviso de "talhao acima do limite" - todos os casos sao tratados
     1.0.7 - Multi-selecao de shapefiles e indicadores de tamanho
         * Plugin abre sem exigir camadas pre-carregadas no projeto
         * Importacao aceita varios .shp de uma vez (multi-selecao)

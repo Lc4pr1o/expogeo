@@ -111,10 +111,9 @@ class BlockPreviewDialog(QDialog):
         cols_layout.setSpacing(8)
 
         for block in blocks:
-            warn = " ⚠ acima do limite" if block.get('oversized') else ""
             header = QLabel(
                 f"<b>{block['name']}</b><br>"
-                f"{block['size_mb']:.1f} MB{warn}"
+                f"{block['size_mb']:.1f} MB"
             )
             header.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
@@ -306,18 +305,11 @@ class AgroDialog(QDialog):
         fb = QFormLayout(g_batch)
         self.le_cliente = QLineEdit()
         self.le_fazenda = QLineEdit()
-
-        # Melhoria 1: Talhão vira seletor de nomenclatura de bloco
-        self.cb_talhao = QComboBox()
-        self.cb_talhao.addItems(NOMENCLATURAS)
-        self.cb_talhao.setToolTip(
-            "Define o nome base dos blocos na exportação.\n"
-            "Parte 1, Parte 2… / Bloco 1, Bloco 2… / Gleba 1, Gleba 2…"
-        )
-
+        self.le_talhao  = QLineEdit()
+        self.le_talhao.setPlaceholderText("ex: 001, Gleba Norte…")
         fb.addRow("Cliente:", self.le_cliente)
         fb.addRow("Fazenda:", self.le_fazenda)
-        fb.addRow("Talhão:", self.cb_talhao)
+        fb.addRow("Talhão:",  self.le_talhao)
         btn_batch = QPushButton("Aplicar a todas as linhas")
         btn_batch.clicked.connect(self._batch_fill)
         fb.addRow(btn_batch)
@@ -329,11 +321,24 @@ class AgroDialog(QDialog):
         L.addWidget(btn_apply)
         return w
 
-    # ── Aba 3: Exportação ───────────────────────────────────────
+    # ── Aba 4: Exportação ───────────────────────────────────────
     def _tab_export(self):
         w = QWidget()
         L = QVBoxLayout(w)
         L.setSpacing(8)
+
+        g_nom = QGroupBox("Nomenclatura dos blocos")
+        gn = QHBoxLayout(g_nom)
+        gn.addWidget(QLabel("Prefixo:"))
+        self.cb_nomenclatura = QComboBox()
+        self.cb_nomenclatura.addItems(NOMENCLATURAS)
+        self.cb_nomenclatura.setToolTip(
+            "Define o prefixo dos blocos quando o projeto excede 2,5 MB.\n"
+            "Parte 1, Parte 2… / Bloco 1, Bloco 2… / Gleba 1, Gleba 2…"
+        )
+        gn.addWidget(self.cb_nomenclatura)
+        gn.addStretch()
+        L.addWidget(g_nom)
 
         g1 = QGroupBox("Formatos de saída")
         gf = QVBoxLayout(g1)
@@ -499,13 +504,14 @@ class AgroDialog(QDialog):
     def _batch_fill(self):
         cliente = self.le_cliente.text().strip()
         fazenda = self.le_fazenda.text().strip()
-        talhao  = self.cb_talhao.currentText()
+        talhao  = self.le_talhao.text().strip()
         for row in range(self.tbl.rowCount()):
             if cliente:
                 self.tbl.setItem(row, 1, QTableWidgetItem(cliente))
             if fazenda:
                 self.tbl.setItem(row, 2, QTableWidgetItem(fazenda))
-            self.tbl.setItem(row, 3, QTableWidgetItem(talhao))
+            if talhao:
+                self.tbl.setItem(row, 3, QTableWidgetItem(talhao))
 
     def _apply(self):
         lyr = self._active_layer()
@@ -549,26 +555,16 @@ class AgroDialog(QDialog):
             if not gl["fazenda"]: gl["fazenda"] = fb_farm
             if not gl["talhao"]:  gl["talhao"]  = gl["name"] or "Talhao"
 
-        nomenclature = self.cb_talhao.currentText()
+        nomenclature = self.cb_nomenclatura.currentText()
         total_mb = estimate_lines_size_mb(lines)
 
         if total_mb > BLOCK_SIZE_LIMIT_MB:
-            # Mapa talhão → linhas para o diálogo de preview
             talhao_to_lines = {}
             for gl in lines:
                 key = gl['talhao'] or gl['fazenda'] or gl['name'] or '?'
                 talhao_to_lines.setdefault(key, []).append(gl)
 
             blocks = split_into_blocks(lines, nomenclature)
-
-            oversized = [b for b in blocks if b.get('oversized')]
-            if oversized:
-                names = ", ".join(b['name'] for b in oversized)
-                QMessageBox.warning(
-                    self, "AgroExport",
-                    f"Os seguintes blocos excedem {BLOCK_SIZE_LIMIT_MB} MB "
-                    f"individualmente e não podem ser subdivididos:\n{names}"
-                )
 
             dlg = BlockPreviewDialog(blocks, talhao_to_lines, nomenclature, self)
             if dlg.exec() != QDialog.DialogCode.Accepted:
@@ -658,9 +654,8 @@ class AgroDialog(QDialog):
                                 "Selecione um ou mais arquivos .shp.")
             return
 
-        imported_info = []
+        valid_layers = []
         errors = []
-        total_mb = 0.0
 
         for path in self._import_paths:
             if not os.path.isfile(path):
@@ -671,32 +666,94 @@ class AgroDialog(QDialog):
             if not lyr.isValid():
                 errors.append(f"Inválido: {name}")
                 continue
-            QgsProject.instance().addMapLayer(lyr)
-            if lyr.geometryType() == QgsWkbTypes.LineGeometry:
-                self.cb.addItem(lyr.name(), lyr.id())
-            mb = estimate_layer_size_mb(lyr)
-            total_mb += mb
-            imported_info.append(
-                f"  {name}  —  {lyr.featureCount()} feições  ·  {mb:.1f} MB"
-            )
+            if lyr.geometryType() != QgsWkbTypes.LineGeometry:
+                errors.append(f"Não é LineString: {name}")
+                continue
+            valid_layers.append(lyr)
 
-        if not imported_info:
-            msg = "Nenhuma camada foi importada."
+        if not valid_layers:
+            msg = "Nenhuma camada de linhas válida encontrada."
             if errors:
                 msg += "\n" + "\n".join(errors)
             QMessageBox.warning(self, "AgroExport", msg)
             return
 
+        if len(valid_layers) == 1:
+            merged = valid_layers[0]
+            QgsProject.instance().addMapLayer(merged)
+            source_info = []
+        else:
+            # Exibe progresso antes de mesclar (pode demorar)
+            self.status.setText("Mesclando camadas…")
+            QApplication.processEvents()
+            merged = self._merge_layers(valid_layers)
+            QgsProject.instance().addMapLayer(merged)
+            source_info = [
+                f"  {lyr.name()}: {lyr.featureCount()} feições"
+                for lyr in valid_layers
+            ]
+
+        self.cb.addItem(merged.name(), merged.id())
         self.cb.setCurrentIndex(self.cb.count() - 1)
 
-        lines = [f"Total importado: {total_mb:.1f} MB"] + imported_info
+        mb = estimate_layer_size_mb(merged)
+        n  = merged.featureCount()
+
+        lines = [f"{merged.name()}: {n} feições · {mb:.1f} MB"]
+        if source_info:
+            lines += source_info
         if errors:
-            lines += ["", "Erros:"] + [f"  {e}" for e in errors]
+            lines += ["", "Ignorados:"] + [f"  {e}" for e in errors]
+
         self.lbl_import_res.setText("\n".join(lines))
         self.status.setText(
-            f"{len(imported_info)} camada(s) importada(s) — prossiga para Padronização."
+            f"Importado — {n} feições · {mb:.1f} MB — prossiga para Padronização."
         )
 
         for i in range(1, 4):
             self.tabs.setTabEnabled(i, True)
         self.tabs.setCurrentIndex(1)
+
+    def _merge_layers(self, layers):
+        """Funde múltiplas camadas LineString em uma única camada de memória."""
+        base_crs = layers[0].crs()
+        crs_id   = base_crs.authid()
+
+        # União dos campos de todas as camadas
+        all_fields = {}
+        for lyr in layers:
+            for f in lyr.fields():
+                if f.name() not in all_fields:
+                    all_fields[f.name()] = f
+
+        names = [lyr.name() for lyr in layers]
+        merged_name = "+".join(names[:3]) + ("…" if len(names) > 3 else "")
+
+        mem = QgsVectorLayer(f"LineString?crs={crs_id}", merged_name, "memory")
+        pr  = mem.dataProvider()
+        pr.addAttributes(list(all_fields.values()))
+        mem.updateFields()
+
+        feats_out = []
+        for lyr in layers:
+            tr = None
+            if lyr.crs().authid() != crs_id:
+                tr = QgsCoordinateTransform(
+                    lyr.crs(), base_crs, QgsProject.instance()
+                )
+            for feat in lyr.getFeatures():
+                nf   = QgsFeature(mem.fields())
+                geom = feat.geometry()
+                if tr:
+                    geom.transform(tr)
+                nf.setGeometry(geom)
+                for f in lyr.fields():
+                    try:
+                        nf[f.name()] = feat[f.name()]
+                    except Exception:
+                        pass
+                feats_out.append(nf)
+
+        pr.addFeatures(feats_out)
+        mem.updateExtents()
+        return mem

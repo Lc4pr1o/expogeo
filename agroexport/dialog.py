@@ -8,7 +8,7 @@ from qgis.PyQt.QtWidgets import (
     QLabel, QComboBox, QDoubleSpinBox, QSpinBox, QPushButton, QFileDialog,
     QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox,
     QLineEdit, QGroupBox, QProgressBar, QMessageBox, QSizePolicy,
-    QFormLayout
+    QFormLayout, QStyledItemDelegate, QApplication
 )
 from qgis.PyQt.QtCore import Qt, QThread, pyqtSignal, QVariant
 from qgis.core import (
@@ -25,6 +25,22 @@ from .exporter import (
 )
 
 TIPOS = ["Curva", "AB", "Limite"]
+
+
+class TipoDelegate(QStyledItemDelegate):
+    """Mostra QComboBox apenas durante a edição; célula em repouso é texto puro."""
+
+    def createEditor(self, parent, option, index):
+        combo = QComboBox(parent)
+        combo.addItems(TIPOS)
+        return combo
+
+    def setEditorData(self, editor, index):
+        val = index.data(Qt.ItemDataRole.DisplayRole) or "Curva"
+        editor.setCurrentIndex(max(editor.findText(val), 0))
+
+    def setModelData(self, editor, model, index):
+        model.setData(index, editor.currentText(), Qt.ItemDataRole.DisplayRole)
 
 
 # ── Worker thread ──────────────────────────────────────────────
@@ -151,6 +167,7 @@ class AgroDialog(QDialog):
         self.tbl.setEditTriggers(
             QTableWidget.EditTrigger.DoubleClicked | QTableWidget.EditTrigger.SelectedClicked
         )
+        self.tbl.setItemDelegateForColumn(4, TipoDelegate(self.tbl))
         L.addWidget(self.tbl)
 
         # Preenchimento em lote
@@ -287,22 +304,29 @@ class AgroDialog(QDialog):
             QMessageBox.warning(self, "AgroExport", "Nenhuma camada disponível.")
             return
         self._ensure_fields(lyr)
-        self.tbl.setRowCount(0)
-        for feat in lyr.getFeatures():
-            r = self.tbl.rowCount()
-            self.tbl.insertRow(r)
+        self.status.setText("Carregando feições…")
+        QApplication.processEvents()
+
+        feats = list(lyr.getFeatures())
+        field_names = {f.name() for f in lyr.fields()}
+
+        self.tbl.setUpdatesEnabled(False)
+        self.tbl.blockSignals(True)
+        self.tbl.setRowCount(len(feats))
+
+        for r, feat in enumerate(feats):
             id_item = QTableWidgetItem(str(feat.id()))
             id_item.setFlags(Qt.ItemFlag.NoItemFlags)
             self.tbl.setItem(r, 0, id_item)
             for col, fn in enumerate(["cliente", "fazenda", "talhao"], 1):
-                v = feat[fn] if fn in feat.fields().names() else ""
+                v = feat[fn] if fn in field_names else ""
                 self.tbl.setItem(r, col, QTableWidgetItem(str(v or "")))
-            combo = QComboBox()
-            combo.addItems(TIPOS)
-            cur = feat["tipo_linha"] if "tipo_linha" in feat.fields().names() else "Curva"
-            combo.setCurrentIndex(max(combo.findText(str(cur or "Curva")), 0))
-            self.tbl.setCellWidget(r, 4, combo)
-        self.status.setText(f"{self.tbl.rowCount()} feições carregadas.")
+            tipo = feat["tipo_linha"] if "tipo_linha" in field_names else "Curva"
+            self.tbl.setItem(r, 4, QTableWidgetItem(str(tipo or "Curva")))
+
+        self.tbl.blockSignals(False)
+        self.tbl.setUpdatesEnabled(True)
+        self.status.setText(f"{len(feats)} feições carregadas.")
 
     def _batch_fill(self):
         cliente = self.le_cliente.text().strip()
@@ -322,20 +346,18 @@ class AgroDialog(QDialog):
             QMessageBox.warning(self, "AgroExport", "Carregue as feições primeiro.")
             return
         self._ensure_fields(lyr)
+        idx_cli  = lyr.fields().indexOf("cliente")
+        idx_faz  = lyr.fields().indexOf("fazenda")
+        idx_tal  = lyr.fields().indexOf("talhao")
+        idx_tipo = lyr.fields().indexOf("tipo_linha")
         from qgis.core import edit
         with edit(lyr):
             for row in range(self.tbl.rowCount()):
                 fid = int(self.tbl.item(row, 0).text())
-                for col, fn in enumerate(["cliente", "fazenda", "talhao"], 1):
-                    lyr.changeAttributeValue(
-                        fid, lyr.fields().indexOf(fn),
-                        self.tbl.item(row, col).text()
-                    )
-                combo = self.tbl.cellWidget(row, 4)
-                lyr.changeAttributeValue(
-                    fid, lyr.fields().indexOf("tipo_linha"),
-                    combo.currentText()
-                )
+                lyr.changeAttributeValue(fid, idx_cli,  self.tbl.item(row, 1).text())
+                lyr.changeAttributeValue(fid, idx_faz,  self.tbl.item(row, 2).text())
+                lyr.changeAttributeValue(fid, idx_tal,  self.tbl.item(row, 3).text())
+                lyr.changeAttributeValue(fid, idx_tipo, self.tbl.item(row, 4).text())
         self.status.setText("Classificação salva → vá para Exportação.")
 
     # ── Lógica aba 3 ──────────────────────────────────────────

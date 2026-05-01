@@ -5,7 +5,7 @@ import os
 
 from qgis.PyQt.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
-    QLabel, QComboBox, QSpinBox, QPushButton, QFileDialog,
+    QLabel, QComboBox, QDoubleSpinBox, QSpinBox, QPushButton, QFileDialog,
     QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox,
     QLineEdit, QGroupBox, QProgressBar, QMessageBox, QSizePolicy,
     QFormLayout, QStyledItemDelegate, QApplication
@@ -49,15 +49,16 @@ class Worker(QThread):
     progress = pyqtSignal(int)
     done     = pyqtSignal(object, dict)
 
-    def __init__(self, layer, min_dist, max_dist):
+    def __init__(self, layer, min_dist, max_dist, dev_tol):
         super().__init__()
         self.layer    = layer
         self.min_dist = min_dist
         self.max_dist = max_dist
+        self.dev_tol  = dev_tol
 
     def run(self):
         result, stats = simplify_layer(
-            self.layer, self.min_dist, self.max_dist, self.progress.emit
+            self.layer, self.min_dist, self.max_dist, self.dev_tol, self.progress.emit
         )
         self.done.emit(result, stats)
 
@@ -100,6 +101,24 @@ class AgroDialog(QDialog):
         r1.addWidget(self.cb)
         L.addWidget(g1)
 
+        g2 = QGroupBox("Simplificação (redução de vértices redundantes)")
+        r2 = QHBoxLayout(g2)
+        r2.addWidget(QLabel("Tolerância geométrica:"))
+        self.sp_tol = QDoubleSpinBox()
+        self.sp_tol.setRange(0.0, 1.0)
+        self.sp_tol.setValue(0.05)
+        self.sp_tol.setDecimals(2)
+        self.sp_tol.setSingleStep(0.01)
+        self.sp_tol.setSuffix(" m")
+        self.sp_tol.setToolTip(
+            "Desvio máximo permitido ao remover vértices próximos.\n"
+            "0.05 m = apenas vértices quase colineares são removidos.\n"
+            "0.00 m = nenhum vértice é removido (só densificação)."
+        )
+        r2.addWidget(self.sp_tol)
+        r2.addStretch()
+        L.addWidget(g2)
+
         g3 = QGroupBox("Espaçamento entre vértices (m)")
         r3 = QHBoxLayout(g3)
         r3.addWidget(QLabel("Mínimo:"))
@@ -108,8 +127,9 @@ class AgroDialog(QDialog):
         self.sp_min.setValue(5)
         self.sp_min.setSuffix(" m")
         self.sp_min.setToolTip(
-            "Vértices mais próximos que este valor serão removidos.\n"
-            "Garante espaçamento mínimo entre pontos consecutivos."
+            "Vértices mais próximos que este valor serão removidos\n"
+            "SOMENTE se o desvio geométrico for menor que a tolerância acima.\n"
+            "Vértices em curvas são sempre preservados."
         )
         r3.addWidget(self.sp_min)
         r3.addSpacing(16)
@@ -119,8 +139,8 @@ class AgroDialog(QDialog):
         self.sp_max.setValue(15)
         self.sp_max.setSuffix(" m")
         self.sp_max.setToolTip(
-            "Segmentos maiores que este valor receberão vértices intermediários.\n"
-            "Garante espaçamento máximo entre pontos consecutivos."
+            "Segmentos maiores que este valor receberão vértices\n"
+            "interpolados automaticamente. Não altera o traçado."
         )
         r3.addWidget(self.sp_max)
         r3.addStretch()
@@ -243,7 +263,7 @@ class AgroDialog(QDialog):
             return
         self.pb.setValue(0)
         self.lbl_res.setText("Processando…")
-        self._worker = Worker(lyr, self.sp_min.value(), self.sp_max.value())
+        self._worker = Worker(lyr, self.sp_min.value(), self.sp_max.value(), self.sp_tol.value())
         self._worker.progress.connect(self.pb.setValue)
         self._worker.done.connect(self._simpl_done)
         self._worker.start()

@@ -101,14 +101,27 @@ def collect_lines(layer):
     return out
 
 
-# ── Regularização de espaçamento de vértices ──────────────────
+# ── Padronização de espaçamento de vértices ───────────────────
 
-def _regularize_points(pts, min_d, max_d):
+def _chord_deviation(pt, a, b):
+    """Distância perpendicular de pt até o segmento a→b."""
+    dx = b.x() - a.x()
+    dy = b.y() - a.y()
+    len_sq = dx * dx + dy * dy
+    if len_sq == 0:
+        return math.hypot(pt.x() - a.x(), pt.y() - a.y())
+    t = max(0.0, min(1.0, ((pt.x() - a.x()) * dx + (pt.y() - a.y()) * dy) / len_sq))
+    return math.hypot(pt.x() - (a.x() + t * dx), pt.y() - (a.y() + t * dy))
+
+
+def _regularize_points(pts, min_d, max_d, dev_tol):
     """
-    Normaliza o espaçamento entre vértices de uma polyline:
-    - Descarta vértices a menos de min_d metros do anterior (rarefação)
-    - Insere vértices interpolados onde o gap > max_d metros (densificação)
-    O traçado original nunca é distorcido — apenas o espaçamento muda.
+    Normaliza o espaçamento entre vértices:
+    - Remove vértices < min_d do anterior SOMENTE se o desvio geométrico
+      (distância do ponto à corda anterior→próximo) for <= dev_tol.
+      Se o ponto estiver numa curva (desvio > dev_tol), é mantido.
+    - Insere vértices interpolados onde o gap > max_d (densificação).
+      A densificação nunca altera o traçado.
     """
     if len(pts) < 2:
         return list(pts)
@@ -116,17 +129,25 @@ def _regularize_points(pts, min_d, max_d):
     result = [pts[0]]
     last = pts[0]
 
-    for pt in pts[1:-1]:
+    for i in range(1, len(pts) - 1):
+        pt = pts[i]
         dx = pt.x() - last.x()
         dy = pt.y() - last.y()
         d = math.hypot(dx, dy)
+
         if d < min_d:
-            continue                          # muito próximo — descarta
-        if d > max_d:                         # gap grande — densifica
+            # Candidato a remoção — verifica se está numa curva
+            dev = _chord_deviation(pt, last, pts[i + 1])
+            if dev <= dev_tol:
+                continue  # trecho reto: descarta com segurança
+            # Curva relevante: mantém o ponto mesmo estando próximo
+
+        if d > max_d:
             n = math.ceil(d / max_d)
             for j in range(1, n):
                 t = j / n
                 result.append(QgsPointXY(last.x() + t * dx, last.y() + t * dy))
+
         result.append(pt)
         last = pt
 
@@ -144,7 +165,7 @@ def _regularize_points(pts, min_d, max_d):
     return result
 
 
-def simplify_layer(layer, min_dist, max_dist, progress_cb=None):
+def simplify_layer(layer, min_dist, max_dist, dev_tol, progress_cb=None):
     """
     Regulariza o espaçamento de vértices de todas as feições.
     Parâmetros em metros (requer CRS projetado — ex: UTM).
@@ -176,14 +197,14 @@ def simplify_layer(layer, min_dist, max_dist, progress_cb=None):
 
         if g.isMultipart():
             parts = g.asMultiPolyline()
-            new_parts = [_regularize_points(p, min_dist, max_dist) for p in parts]
+            new_parts = [_regularize_points(p, min_dist, max_dist, dev_tol) for p in parts]
             new_parts = [p for p in new_parts if len(p) >= 2]
             if not new_parts:
                 continue
             sg = QgsGeometry.fromMultiPolylineXY(new_parts)
         else:
             pts = g.asPolyline()
-            new_pts = _regularize_points(pts, min_dist, max_dist)
+            new_pts = _regularize_points(pts, min_dist, max_dist, dev_tol)
             if len(new_pts) < 2:
                 continue
             sg = QgsGeometry.fromPolylineXY(new_pts)

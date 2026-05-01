@@ -3,7 +3,7 @@ name=AgroExport
 qgisMinimumVersion=3.16
 qgisMaximumVersion=4.99
 description=Exporta linhas de orientação (guidance lines) para terminais agrícolas John Deere e PTx Trimble diretamente do QGIS.
-version=1.0.2
+version=1.0.3
 author=Leonardo Malerbo
 email=leonardo.cardosolc421@gmail.com
 about=Exporta camadas de linhas do QGIS para os formatos nativos de terminais agrícolas:
@@ -17,6 +17,11 @@ repository=https://github.com/Lc4pr1o/expogeo
 homepage=https://github.com/Lc4pr1o/expogeo
 
 changelog=
+    1.0.3 - Preservação de curvas e controle de qualidade
+        * Remoção de vértices próximos só ocorre se desvio < tolerância geométrica
+        * Vértices em curvas são sempre preservados independente do espaçamento mínimo
+        * Campo "Tolerância geométrica" controla o quão agressiva é a simplificação
+        * Densificação por espaçamento máximo mantida (não altera traçado)
     1.0.2 - Algoritmo de padronização de vértices corrigido
         * Substitui Douglas-Peucker por regularização real de espaçamento
         * Mínimo/Máximo agora controlam distância em metros entre vértices consecutivos

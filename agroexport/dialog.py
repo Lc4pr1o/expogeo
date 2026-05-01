@@ -31,6 +31,18 @@ TIPOS = ["Curva", "AB", "Limite"]
 NOMENCLATURAS = ["Parte", "Bloco", "Gleba"]
 
 
+def _dir_size_mb(path):
+    """Soma o tamanho em MB de todos os arquivos em um diretório."""
+    total = 0
+    for dirpath, _, filenames in os.walk(path):
+        for fname in filenames:
+            try:
+                total += os.path.getsize(os.path.join(dirpath, fname))
+            except OSError:
+                pass
+    return total / (1024 * 1024)
+
+
 class TipoDelegate(QStyledItemDelegate):
     """Mostra QComboBox apenas durante a edição; célula em repouso é texto puro."""
 
@@ -164,6 +176,7 @@ class AgroDialog(QDialog):
         self.setMinimumSize(580, 460)
         self.resize(700, 600)
         self.simplified = None
+        self._import_paths = []
         self._build()
 
     def _build(self):
@@ -365,23 +378,24 @@ class AgroDialog(QDialog):
         L.addStretch()
         return w
 
-    # ── Aba 4: Importação ───────────────────────────────────────
+    # ── Aba 1: Importação ───────────────────────────────────────
     def _tab_import(self):
         w = QWidget()
         L = QVBoxLayout(w)
 
-        g1 = QGroupBox("Arquivo de linhas de colheita (.shp)")
+        g1 = QGroupBox("Linhas de colheita (.shp)")
         r1 = QHBoxLayout(g1)
         self.le_import = QLineEdit()
-        self.le_import.setPlaceholderText("Selecione um arquivo .shp…")
+        self.le_import.setReadOnly(True)
+        self.le_import.setPlaceholderText("Selecione um ou mais arquivos .shp…")
         r1.addWidget(self.le_import)
         btn_browse = QPushButton("Procurar…")
         btn_browse.clicked.connect(self._browse_shp)
         r1.addWidget(btn_browse)
         L.addWidget(g1)
 
-        btn_import = QPushButton("Importar camada")
-        btn_import.setStyleSheet("font-weight:bold;padding:6px")
+        btn_import = QPushButton("Importar")
+        btn_import.setStyleSheet("font-weight:bold;padding:8px;font-size:13px")
         btn_import.clicked.connect(self._import_shp)
         L.addWidget(btn_import)
 
@@ -432,8 +446,9 @@ class AgroDialog(QDialog):
         QgsProject.instance().addMapLayer(result)
         diff = stats['after'] - stats['before']
         sinal = "+" if diff > 0 else ""
+        mb = estimate_layer_size_mb(result)
         txt = (f"{stats['features']} feições  ·  "
-               f"{stats['before']:,} → {stats['after']:,} vértices  ({sinal}{diff:,})")
+               f"{stats['before']:,} → {stats['after']:,} vértices  ({sinal}{diff:,})  ·  {mb:.1f} MB")
         self.lbl_res.setText(txt)
         self.status.setText("Padronização concluída.")
 
@@ -567,6 +582,7 @@ class AgroDialog(QDialog):
 
         errors = []
         total_lines_exported = 0
+        total_disk_mb = 0.0
 
         for block in export_blocks:
             block_lines = block['lines']
@@ -601,8 +617,8 @@ class AgroDialog(QDialog):
                     errors.append(f"AgGPS: {e}")
 
             total_lines_exported += len(block_lines)
+            total_disk_mb += _dir_size_mb(block_dir)
 
-        # Melhoria 3: mensagem de conclusão limpa
         n_blocks = len(export_blocks)
         if n_blocks > 1:
             bloco_info = (f"{n_blocks} blocos "
@@ -614,6 +630,7 @@ class AgroDialog(QDialog):
             f"Projeto: {fb_client} / {fb_farm}",
             f"Linhas exportadas: {total_lines_exported}",
             f"Blocos gerados: {bloco_info}",
+            f"Tamanho em disco: {total_disk_mb:.1f} MB",
         ]
         if errors:
             msg_parts.append("\nErros:\n" + "\n".join(f"  {e}" for e in errors))
@@ -623,37 +640,63 @@ class AgroDialog(QDialog):
         self.status.setText("Exportação concluída.")
         QMessageBox.information(self, "AgroExport — Concluído", msg)
 
-    # ── Lógica aba 4 ──────────────────────────────────────────
+    # ── Lógica aba 1 ──────────────────────────────────────────
     def _browse_shp(self):
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Selecionar shapefile", "", "Shapefile (*.shp)"
+        paths, _ = QFileDialog.getOpenFileNames(
+            self, "Selecionar shapefiles", "", "Shapefile (*.shp)"
         )
-        if path:
-            self.le_import.setText(path)
+        if paths:
+            self._import_paths = paths
+            if len(paths) == 1:
+                self.le_import.setText(paths[0])
+            else:
+                self.le_import.setText(f"{len(paths)} arquivos selecionados")
 
     def _import_shp(self):
-        path = self.le_import.text().strip()
-        if not path or not os.path.isfile(path):
-            QMessageBox.warning(self, "AgroExport", "Selecione um arquivo .shp válido.")
-            return
-        name = os.path.splitext(os.path.basename(path))[0]
-        lyr = QgsVectorLayer(path, name, "ogr")
-        if not lyr.isValid():
+        if not self._import_paths:
             QMessageBox.warning(self, "AgroExport",
-                                "Não foi possível carregar o shapefile.")
+                                "Selecione um ou mais arquivos .shp.")
             return
-        QgsProject.instance().addMapLayer(lyr)
-        if lyr.geometryType() == QgsWkbTypes.LineGeometry:
-            self.cb.addItem(lyr.name(), lyr.id())
-            self.cb.setCurrentIndex(self.cb.count() - 1)
 
-        n = lyr.featureCount()
-        self.lbl_import_res.setText(
-            f"Camada '{name}' importada com {n} feições."
+        imported_info = []
+        errors = []
+        total_mb = 0.0
+
+        for path in self._import_paths:
+            if not os.path.isfile(path):
+                errors.append(f"Não encontrado: {os.path.basename(path)}")
+                continue
+            name = os.path.splitext(os.path.basename(path))[0]
+            lyr = QgsVectorLayer(path, name, "ogr")
+            if not lyr.isValid():
+                errors.append(f"Inválido: {name}")
+                continue
+            QgsProject.instance().addMapLayer(lyr)
+            if lyr.geometryType() == QgsWkbTypes.LineGeometry:
+                self.cb.addItem(lyr.name(), lyr.id())
+            mb = estimate_layer_size_mb(lyr)
+            total_mb += mb
+            imported_info.append(
+                f"  {name}  —  {lyr.featureCount()} feições  ·  {mb:.1f} MB"
+            )
+
+        if not imported_info:
+            msg = "Nenhuma camada foi importada."
+            if errors:
+                msg += "\n" + "\n".join(errors)
+            QMessageBox.warning(self, "AgroExport", msg)
+            return
+
+        self.cb.setCurrentIndex(self.cb.count() - 1)
+
+        lines = [f"Total importado: {total_mb:.1f} MB"] + imported_info
+        if errors:
+            lines += ["", "Erros:"] + [f"  {e}" for e in errors]
+        self.lbl_import_res.setText("\n".join(lines))
+        self.status.setText(
+            f"{len(imported_info)} camada(s) importada(s) — prossiga para Padronização."
         )
-        self.status.setText(f"Camada '{name}' adicionada — prossiga para Padronização.")
 
-        # Desbloqueia abas downstream e avança para Padronização
         for i in range(1, 4):
             self.tabs.setTabEnabled(i, True)
         self.tabs.setCurrentIndex(1)

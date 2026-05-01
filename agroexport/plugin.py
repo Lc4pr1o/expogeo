@@ -1,8 +1,7 @@
 # plugin.py
 import os
-from qgis.PyQt.QtWidgets import QAction, QMessageBox
+from qgis.PyQt.QtWidgets import QAction
 from qgis.PyQt.QtGui import QIcon
-from qgis.core import QgsVectorLayer, QgsWkbTypes, QgsProject
 
 
 class AgroExportPlugin:
@@ -26,19 +25,6 @@ class AgroExportPlugin:
         del self.action
 
     def run(self):
-        has_lines = any(
-            isinstance(lyr, QgsVectorLayer) and
-            lyr.geometryType() == QgsWkbTypes.LineGeometry
-            for lyr in QgsProject.instance().mapLayers().values()
-        )
-        if not has_lines:
-            QMessageBox.warning(
-                self.iface.mainWindow(), 'AgroExport',
-                'Nenhuma camada de linhas encontrada no projeto.\n\n'
-                'Adicione uma camada de linhas (LineString) antes de exportar.'
-            )
-            return
-
         from .dialog import AgroDialog
         dlg = AgroDialog()
         dlg.exec()

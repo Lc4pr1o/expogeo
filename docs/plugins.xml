@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<plugins>
+  <pyqgis_plugin name="AgroExport" version="1.0.0">
+    <description><![CDATA[Exporta linhas de orientação (guidance lines) para terminais agrícolas John Deere e PTx Trimble diretamente do QGIS.]]></description>
+    <about><![CDATA[Exporta camadas de linhas do QGIS para os formatos nativos de terminais agrícolas:
+- John Deere Operations Center (Gen4 .gjson)
+- John Deere GreenStar 3 2630 (SpatialCatalog)
+- PTx Trimble Precision-IQ AgData (GFX-750/1050/1060)
+- PTx Trimble AgGPS legado (FMX, CFX-750, EZ-Guide)]]></about>
+    <version>1.0.0</version>
+    <trusted>False</trusted>
+    <qgis_minimum_version>3.16</qgis_minimum_version>
+    <qgis_maximum_version>4.99</qgis_maximum_version>
+    <homepage>https://github.com/Lc4pr1o/expogeo</homepage>
+    <file_name>agroexport.1.0.0.zip</file_name>
+    <icon/>
+    <author_name>Leonardo Malerbo</author_name>
+    <download_url>https://lc4pr1o.github.io/expogeo/releases/agroexport.1.0.0.zip</download_url>
+    <uploaded_by>Lc4pr1o</uploaded_by>
+    <create_date>2026-05-01T15:47:14.000000Z</create_date>
+    <update_date>2026-05-01T15:47:14.000000Z</update_date>
+    <experimental>False</experimental>
+    <deprecated>False</deprecated>
+    <server>False</server>
+    <external_deps/>
+    <tracker>https://github.com/Lc4pr1o/expogeo/issues</tracker>
+    <repository>https://github.com/Lc4pr1o/expogeo</repository>
+    <tags>agriculture,export,john deere,trimble,guidance,precision ag</tags>
+    <downloads>0</downloads>
+    <average_vote>0</average_vote>
+    <rating_votes>0</rating_votes>
+    <changelog><![CDATA[1.0.0 - Versão inicial
+* Exportação para John Deere OC (Gen4)
+* Exportação para GS3-2630
+* Exportação para PTx Trimble Precision-IQ (AgData)
+* Exportação para PTx Trimble AgGPS legado
+* Simplificação Douglas-Peucker
+* Classificação por cliente/fazenda/talhão]]></changelog>
+  </pyqgis_plugin>
+</plugins>

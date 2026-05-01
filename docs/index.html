@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AgroExport — Repositório QGIS</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 60px auto; padding: 0 20px; color: #222; }
+    h1 { color: #2e7d32; }
+    code { background: #f4f4f4; padding: 2px 6px; border-radius: 4px; font-size: .9em; }
+    pre { background: #f4f4f4; padding: 16px; border-radius: 8px; overflow-x: auto; }
+    .badge { display: inline-block; background: #2e7d32; color: #fff; padding: 3px 10px; border-radius: 12px; font-size: .8em; }
+    a { color: #1565c0; }
+  </style>
+</head>
+<body>
+  <h1>AgroExport <span class="badge">v1.0.0</span></h1>
+  <p>Plugin QGIS para exportação de linhas de orientação (guidance lines) para terminais agrícolas <strong>John Deere</strong> e <strong>PTx Trimble</strong>.</p>
+
+  <h2>Instalar via QGIS</h2>
+  <p>No QGIS: <strong>Plugins → Gerenciar e Instalar Plugins → Configurações → Adicionar</strong></p>
+  <pre>Nome: AgroExport
+URL:  https://lc4pr1o.github.io/expogeo/plugins.xml</pre>
+  <p>Após adicionar o repositório, pesquise por <code>AgroExport</code> na aba <strong>Todos</strong> e clique em <strong>Instalar</strong>.</p>
+
+  <h2>Formatos exportados</h2>
+  <ul>
+    <li>John Deere GEN4 — <code>.zip</code> para Operations Center</li>
+    <li>John Deere GS3_2630 — SpatialCatalog para cartão SD</li>
+    <li>PTx Trimble AgData — <code>.agf</code> para Precision-IQ (GFX-750/1050/1060)</li>
+    <li>PTx Trimble AgGPS — Shapefile para terminais legado</li>
+  </ul>
+
+  <h2>Links</h2>
+  <ul>
+    <li><a href="plugins.xml">plugins.xml</a> — catálogo do repositório</li>
+    <li><a href="https://github.com/Lc4pr1o/expogeo">GitHub</a> — código-fonte</li>
+    <li><a href="https://github.com/Lc4pr1o/expogeo/issues">Issues</a> — reportar problemas</li>
+  </ul>
+</body>
+</html>

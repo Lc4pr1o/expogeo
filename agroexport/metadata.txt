@@ -1,0 +1,34 @@
+[general]
+name=AgroExport
+qgisMinimumVersion=3.16
+qgisMaximumVersion=4.99
+description=Exporta linhas de orientação (guidance lines) para terminais agrícolas John Deere e PTx Trimble diretamente do QGIS.
+version=1.0.0
+author=Leonardo Malerbo
+email=leonardo.cardosolc421@gmail.com
+about=Exporta camadas de linhas do QGIS para os formatos nativos de terminais agrícolas:
+    - John Deere Operations Center (Gen4 .gjson)
+    - John Deere GreenStar 3 2630 (SpatialCatalog)
+    - PTx Trimble Precision-IQ AgData (GFX-750/1050/1060)
+    - PTx Trimble AgGPS legado (FMX, CFX-750, EZ-Guide)
+
+tracker=https://github.com/Lc4pr1o/expogeo/issues
+repository=https://github.com/Lc4pr1o/expogeo
+homepage=https://github.com/Lc4pr1o/expogeo
+
+changelog=
+    1.0.0 - Versão inicial
+        * Exportação para John Deere OC (Gen4)
+        * Exportação para GS3-2630
+        * Exportação para PTx Trimble Precision-IQ (AgData)
+        * Exportação para PTx Trimble AgGPS legado
+        * Simplificação Douglas-Peucker
+        * Classificação por cliente/fazenda/talhão
+
+tags=agriculture,export,john deere,trimble,guidance,precision ag
+
+icon=icons/icon.png
+experimental=False
+deprecated=False
+server=False
+hasProcessingProvider=False

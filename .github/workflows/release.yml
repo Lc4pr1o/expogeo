@@ -1,0 +1,53 @@
+name: Release Plugin
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extrair versão da tag
+        id: ver
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Gerar ZIP e atualizar plugins.xml
+        run: python scripts/build_plugin.py ${{ steps.ver.outputs.VERSION }}
+
+      - name: Commit docs/ atualizado
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/ agroexport/metadata.txt
+          git commit -m "release: v${{ steps.ver.outputs.VERSION }}" || echo "Nada a commitar"
+          git push origin HEAD:main
+
+      - name: Criar GitHub Release com o ZIP
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "AgroExport v${{ steps.ver.outputs.VERSION }}"
+          body: |
+            ## AgroExport v${{ steps.ver.outputs.VERSION }}
+
+            ### Instalar via QGIS
+            **Plugins → Gerenciar e Instalar Plugins → Configurações → Adicionar:**
+            ```
+            https://lc4pr1o.github.io/expogeo/plugins.xml
+            ```
+          files: docs/releases/agroexport.${{ steps.ver.outputs.VERSION }}.zip

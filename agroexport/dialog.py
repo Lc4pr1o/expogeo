@@ -377,62 +377,65 @@ class AgroDialog(QDialog):
             if not gl["fazenda"]: gl["fazenda"] = fb_farm
             if not gl["talhao"]:  gl["talhao"]  = fb_field
 
+        self.status.setText("Exportando... aguarde.")
+        QApplication.processEvents()
+
         msgs = []
 
         if self.chk_jd.isChecked():
             try:
-                zip_path, n_lines, n_groups = export_jd_zip(
+                folder, n_lines, n_groups = export_jd_zip(
                     lines, out, "JohnDeere_GEN4",
                     fb_client, fb_farm, fb_field
                 )
                 msgs.append(
-                    f"✅ John Deere GEN4:\n"
-                    f"   {zip_path}\n"
+                    f"John Deere GEN4:\n"
+                    f"   {folder}\n"
                     f"   {n_lines} linhas · {n_groups} grupo(s)\n"
-                    f"   → operationscenter.deere.com › Mapa › Importar"
+                    f"   Importar em: operationscenter.deere.com"
                 )
             except Exception as e:
-                msgs.append(f"❌ Erro GEN4: {e}")
+                msgs.append(f"ERRO GEN4: {e}")
             try:
-                zip_path = export_gs3_zip(
+                folder = export_gs3_zip(
                     lines, out, "JohnDeere",
                     fb_client, fb_farm, fb_field
                 )
                 msgs.append(
-                    f"✅ John Deere GS3_2630:\n"
-                    f"   {zip_path}\n"
-                    f"   → copiar para cartão SD › GS3_2630/"
+                    f"John Deere GS3_2630:\n"
+                    f"   {folder}\n"
+                    f"   Copiar pasta GS3_2630/ para o cartao SD"
                 )
             except Exception as e:
-                msgs.append(f"❌ Erro GS3_2630: {e}")
+                msgs.append(f"ERRO GS3_2630: {e}")
 
         if self.chk_ptx.isChecked():
             try:
-                zip_path = export_agdata_zip(
+                folder = export_agdata_zip(
                     lines, out, "PTX",
                     fb_client, fb_farm, fb_field
                 )
                 msgs.append(
-                    f"✅ PTX Trimble AgData:\n"
-                    f"   {zip_path}\n"
-                    f"   → USB › AgData/Fields/ › monitor › Importar"
+                    f"PTX Trimble AgData:\n"
+                    f"   {folder}\n"
+                    f"   Copiar pasta AgData/ para USB › monitor › Importar"
                 )
             except Exception as e:
-                msgs.append(f"❌ Erro AgData: {e}")
+                msgs.append(f"ERRO AgData: {e}")
             try:
-                zip_path = export_aggps_zip(
+                folder = export_aggps_zip(
                     lines, out, "PTX",
                     fb_client, fb_farm, fb_field
                 )
                 msgs.append(
-                    f"✅ PTX Trimble AgGPS:\n"
-                    f"   {zip_path}\n"
-                    f"   → cartão SD › AgGPS/Data/"
+                    f"PTX Trimble AgGPS:\n"
+                    f"   {folder}\n"
+                    f"   Copiar pasta AgGPS/ para o cartao SD"
                 )
             except Exception as e:
-                msgs.append(f"❌ Erro AgGPS: {e}")
+                msgs.append(f"ERRO AgGPS: {e}")
 
-        self.lbl_exp.setText("\n".join(msgs))
-        self.status.setText("Exportação concluída.")
-        QMessageBox.information(self, "AgroExport — Concluído", "\n".join(msgs))
+        self.lbl_exp.setText("\n\n".join(msgs))
+        self.status.setText("Exportacao concluida.")
+        QMessageBox.information(self, "AgroExport — Concluido", "\n\n".join(msgs))
 

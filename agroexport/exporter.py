@@ -364,9 +364,7 @@ def export_jd_zip(lines, output_dir, prefix,
         groups_dict[key]["lines"].append(gl)
     groups = list(groups_dict.values())
 
-    # Pasta temporária
-    tmp_dir = os.path.join(output_dir, f"_tmp_{prefix}")
-    gen4_dir    = os.path.join(tmp_dir, "Gen4")
+    gen4_dir    = os.path.join(output_dir, "Gen4")
     spatial_dir = os.path.join(gen4_dir, "SpatialFiles")
     os.makedirs(spatial_dir, exist_ok=True)
 
@@ -385,17 +383,7 @@ def export_jd_zip(lines, output_dir, prefix,
         with open(os.path.join(spatial_dir, fname), "w", encoding="utf-8") as f:
             json.dump(gjson_data, f, separators=(",", ":"))
 
-    # Empacota em .zip
-    zip_path = os.path.join(output_dir, f"{prefix}.zip")
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        for root, dirs, files in os.walk(tmp_dir):
-            for file in files:
-                abs_path = os.path.join(root, file)
-                arc_name = os.path.relpath(abs_path, tmp_dir)
-                zf.write(abs_path, arc_name)
-
-    shutil.rmtree(tmp_dir, ignore_errors=True)
-    return zip_path, len(lines), len(groups)
+    return gen4_dir, len(lines), len(groups)
 
 
 # ── 2) Formato Trimble AgGPS (Shapefile WGS84) ───────────────
@@ -566,8 +554,7 @@ def export_aggps_zip(lines, output_dir, prefix, client_name, farm_name, field_na
     f = ascii_safe(farm_name)   or 'Fazenda'
     t = ascii_safe(field_name)  or 'Talhao'
 
-    tmp_dir  = os.path.join(output_dir, f'_tmp_aggps_{prefix}')
-    fld_dir  = os.path.join(tmp_dir, 'AgGPS', 'Data', c, f, t)
+    fld_dir  = os.path.join(output_dir, 'AgGPS', 'Data', c, f, t)
     os.makedirs(fld_dir, exist_ok=True)
 
     # Shapefile
@@ -588,15 +575,7 @@ def export_aggps_zip(lines, output_dir, prefix, client_name, farm_name, field_na
     pos_name = f'{abs(ref_lon):.5f}E{abs(ref_lat):.5f}N600H.pos'
     open(os.path.join(fld_dir, pos_name), 'wb').close()
 
-    zip_path = os.path.join(output_dir, f'{prefix}_AgGPS.zip')
-    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
-        for root, dirs, files in os.walk(tmp_dir):
-            for file in files:
-                abs_path = os.path.join(root, file)
-                arc_name = os.path.relpath(abs_path, tmp_dir)
-                zf.write(abs_path, arc_name)
-    shutil.rmtree(tmp_dir, ignore_errors=True)
-    return zip_path
+    return os.path.join(output_dir, 'AgGPS')
 
 
 # ── 3) Formato GS3_2630 ───────────────────────────────────────
@@ -906,10 +885,9 @@ def export_gs3_zip(lines, output_dir, prefix, client_name, farm_name, field_name
     # hex2 = primeiros 2 hex do field_guid para a pasta intermediária
     hex2  = field_guid.replace('-', '')[:2].upper()
 
-    tmp_dir  = os.path.join(output_dir, f'_tmp_gs3_{prefix}')
-    fld_dir  = os.path.join(tmp_dir, 'GS3_2630', c, 'RCD', 'EIC',
+    fld_dir  = os.path.join(output_dir, 'GS3_2630', c, 'RCD', 'EIC',
                              'Fields', hex2, field_guid)
-    eic_dir  = os.path.join(tmp_dir, 'GS3_2630', c, 'RCD', 'EIC')
+    eic_dir  = os.path.join(output_dir, 'GS3_2630', c, 'RCD', 'EIC')
     os.makedirs(fld_dir, exist_ok=True)
     os.makedirs(eic_dir, exist_ok=True)
 
@@ -958,15 +936,7 @@ def export_gs3_zip(lines, output_dir, prefix, client_name, farm_name, field_name
     with open(os.path.join(fld_dir, 'WaterManagement.SpatialCatalog'), 'w', encoding='utf-8', newline='\r\n') as f:
         f.write(wm_content)
 
-    zip_path = os.path.join(output_dir, f'{prefix}_GS3.zip')
-    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
-        for root, dirs, files in os.walk(tmp_dir):
-            for file in files:
-                abs_path = os.path.join(root, file)
-                arc_name = os.path.relpath(abs_path, tmp_dir)
-                zf.write(abs_path, arc_name)
-    shutil.rmtree(tmp_dir, ignore_errors=True)
-    return zip_path
+    return os.path.join(output_dir, 'GS3_2630')
 
 
 # ── 4) Formato AgData (PTx Trimble Precision-IQ / GFX-750/1050/1060) ──────────
@@ -1085,8 +1055,7 @@ def export_agdata_zip(lines, output_dir, prefix, client_name, farm_name, field_n
         raise ValueError("Nenhuma feição válida.")
 
     field_uuid = new_guid()
-    tmp_dir    = os.path.join(output_dir, f'_tmp_agdata_{prefix}')
-    fields_dir = os.path.join(tmp_dir, 'AgData', 'Fields')
+    fields_dir = os.path.join(output_dir, 'AgData', 'Fields')
     os.makedirs(fields_dir, exist_ok=True)
 
     manifest_bytes, enc_bytes, iv_hex, enc_filename = _make_agf_bytes(
@@ -1098,15 +1067,7 @@ def export_agdata_zip(lines, output_dir, prefix, client_name, farm_name, field_n
         zf.writestr('manifest.xml', manifest_bytes)
         zf.writestr(enc_filename, enc_bytes)
 
-    zip_path = os.path.join(output_dir, f'{prefix}_AgData.zip')
-    with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
-        for root_dir, dirs, files in os.walk(tmp_dir):
-            for file in files:
-                abs_path = os.path.join(root_dir, file)
-                arc_name = os.path.relpath(abs_path, tmp_dir)
-                zf.write(abs_path, arc_name)
-    shutil.rmtree(tmp_dir, ignore_errors=True)
-    return zip_path
+    return os.path.join(output_dir, 'AgData')
 
 
 # ── 5) Formato .isg (GS3 / Gen 4 legacy XML) ─────────────────

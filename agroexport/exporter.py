@@ -19,6 +19,7 @@ from qgis.core import (
     QgsVectorLayer,
     QgsFeature,
     QgsField,
+    QgsGeometry,
     QgsWkbTypes,
     QgsCoordinateReferenceSystem,
     QgsCoordinateTransform,
@@ -100,9 +101,56 @@ def collect_lines(layer):
     return out
 
 
-# ── Simplificação ─────────────────────────────────────────────
+# ── Regularização de espaçamento de vértices ──────────────────
 
-def simplify_layer(layer, tol, progress_cb=None, min_verts=2, max_verts=None):
+def _regularize_points(pts, min_d, max_d):
+    """
+    Normaliza o espaçamento entre vértices de uma polyline:
+    - Descarta vértices a menos de min_d metros do anterior (rarefação)
+    - Insere vértices interpolados onde o gap > max_d metros (densificação)
+    O traçado original nunca é distorcido — apenas o espaçamento muda.
+    """
+    if len(pts) < 2:
+        return list(pts)
+
+    result = [pts[0]]
+    last = pts[0]
+
+    for pt in pts[1:-1]:
+        dx = pt.x() - last.x()
+        dy = pt.y() - last.y()
+        d = math.hypot(dx, dy)
+        if d < min_d:
+            continue                          # muito próximo — descarta
+        if d > max_d:                         # gap grande — densifica
+            n = math.ceil(d / max_d)
+            for j in range(1, n):
+                t = j / n
+                result.append(QgsPointXY(last.x() + t * dx, last.y() + t * dy))
+        result.append(pt)
+        last = pt
+
+    # Último ponto: sempre incluído; densifica se necessário
+    pt = pts[-1]
+    dx = pt.x() - last.x()
+    dy = pt.y() - last.y()
+    d = math.hypot(dx, dy)
+    if d > max_d:
+        n = math.ceil(d / max_d)
+        for j in range(1, n):
+            t = j / n
+            result.append(QgsPointXY(last.x() + t * dx, last.y() + t * dy))
+    result.append(pt)
+    return result
+
+
+def simplify_layer(layer, min_dist, max_dist, progress_cb=None):
+    """
+    Regulariza o espaçamento de vértices de todas as feições.
+    Parâmetros em metros (requer CRS projetado — ex: UTM).
+    A geometria nunca é distorcida; apenas o espaçamento entre vértices
+    é normalizado para ficar entre min_dist e max_dist metros.
+    """
     mem = QgsVectorLayer(
         f"LineString?crs={layer.crs().authid()}",
         f"{layer.name()}_simpl", "memory")
@@ -118,41 +166,31 @@ def simplify_layer(layer, tol, progress_cb=None, min_verts=2, max_verts=None):
 
     total = layer.featureCount()
     vb = va = 0
-    clamped = over_max = 0
     feats_out = []
+
     for i, feat in enumerate(layer.getFeatures()):
         g = feat.geometry()
         if not g or g.isEmpty():
             continue
         vb += count_verts(g)
-        sg = g.simplify(tol)
-        if sg.isEmpty() or count_verts(sg) < 2:
-            sg = g
+
+        if g.isMultipart():
+            parts = g.asMultiPolyline()
+            new_parts = [_regularize_points(p, min_dist, max_dist) for p in parts]
+            new_parts = [p for p in new_parts if len(p) >= 2]
+            if not new_parts:
+                continue
+            sg = QgsGeometry.fromMultiPolylineXY(new_parts)
+        else:
+            pts = g.asPolyline()
+            new_pts = _regularize_points(pts, min_dist, max_dist)
+            if len(new_pts) < 2:
+                continue
+            sg = QgsGeometry.fromPolylineXY(new_pts)
+
         v = count_verts(sg)
-        if v < min_verts:
-            sg = g
-            v = count_verts(sg)
-            clamped += 1
-        if max_verts and v > max_verts:
-            # Aumenta a tolerância iterativamente até respeitar o máximo
-            t = tol * 2
-            best_sg, best_v = sg, v
-            while v > max_verts:
-                candidate = g.simplify(t)
-                if candidate.isEmpty():
-                    break
-                cv = count_verts(candidate)
-                if cv < 2:
-                    break
-                if cv >= min_verts:
-                    best_sg, best_v = candidate, cv
-                if cv <= max_verts:
-                    break
-                t *= 2
-            sg, v = best_sg, best_v
-            if v > max_verts:
-                over_max += 1
         va += v
+
         nf = QgsFeature(mem.fields())
         nf.setGeometry(sg)
         for fld in layer.fields():
@@ -163,14 +201,15 @@ def simplify_layer(layer, tol, progress_cb=None, min_verts=2, max_verts=None):
         if "tipo_linha" not in existing:
             nf["tipo_linha"] = "AB" if v == 2 else "Curva"
         feats_out.append(nf)
+
         if progress_cb and total > 0:
             progress_cb(int((i + 1) / total * 100))
+
     pr.addFeatures(feats_out)
     mem.updateExtents()
     pct = (1 - va / vb) * 100 if vb else 0
     return mem, {
-        "features": len(feats_out), "before": vb, "after": va,
-        "pct": pct, "clamped": clamped, "over_max": over_max,
+        "features": len(feats_out), "before": vb, "after": va, "pct": pct,
     }
 
 

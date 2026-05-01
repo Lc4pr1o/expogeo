@@ -1,24 +1,24 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <plugins>
-  <pyqgis_plugin name="AgroExport" version="1.0.1">
+  <pyqgis_plugin name="AgroExport" version="1.0.2">
     <description><![CDATA[Exporta linhas de orientação (guidance lines) para terminais agrícolas John Deere e PTx Trimble diretamente do QGIS.]]></description>
     <about><![CDATA[Exporta camadas de linhas do QGIS para os formatos nativos de terminais agrícolas:
 - John Deere Operations Center (Gen4 .gjson)
 - John Deere GreenStar 3 2630 (SpatialCatalog)
 - PTx Trimble Precision-IQ AgData (GFX-750/1050/1060)
 - PTx Trimble AgGPS legado (FMX, CFX-750, EZ-Guide)]]></about>
-    <version>1.0.1</version>
+    <version>1.0.2</version>
     <trusted>False</trusted>
     <qgis_minimum_version>3.16</qgis_minimum_version>
     <qgis_maximum_version>4.99</qgis_maximum_version>
     <homepage>https://github.com/Lc4pr1o/expogeo</homepage>
-    <file_name>agroexport.1.0.1.zip</file_name>
+    <file_name>agroexport.1.0.2.zip</file_name>
     <icon/>
     <author_name>Leonardo Malerbo</author_name>
-    <download_url>https://lc4pr1o.github.io/expogeo/releases/agroexport.1.0.1.zip</download_url>
+    <download_url>https://lc4pr1o.github.io/expogeo/releases/agroexport.1.0.2.zip</download_url>
     <uploaded_by>Lc4pr1o</uploaded_by>
-    <create_date>2026-05-01T16:09:53.000000Z</create_date>
-    <update_date>2026-05-01T16:09:53.000000Z</update_date>
+    <create_date>2026-05-01T16:22:22.000000Z</create_date>
+    <update_date>2026-05-01T16:22:22.000000Z</update_date>
     <experimental>False</experimental>
     <deprecated>False</deprecated>
     <server>False</server>
@@ -29,11 +29,17 @@
     <downloads>0</downloads>
     <average_vote>0</average_vote>
     <rating_votes>0</rating_votes>
-    <changelog><![CDATA[1.0.1 - Melhorias de usabilidade e desempenho
+    <changelog><![CDATA[1.0.2 - Algoritmo de padronização de vértices corrigido
+* Substitui Douglas-Peucker por regularização real de espaçamento
+* Mínimo/Máximo agora controlam distância em metros entre vértices consecutivos
+* Vértices muito próximos (< mín) são removidos sem distorcer o traçado
+* Gaps maiores que o máximo recebem vértices interpolados linearmente
+* A linha resultante nunca se afasta da geometria original
+* Aba renomeada para "Padronização"
+1.0.1 - Melhorias de usabilidade e desempenho
 * Aba Exportação: agrupamento por marca (John Deere / PTX Trimble)
 * Aba Exportação: remove prefixo e metadados de fallback
 * Aba Classificação: carregamento de feições até 10x mais rápido
-* Simplificação: tolerância iterativa para respeitar limite máximo de vértices
 * Remove GS3 legacy XML (.isg)
 1.0.0 - Versão inicial
 * Exportação para John Deere OC (Gen4)

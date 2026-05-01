@@ -5,7 +5,7 @@ import os
 
 from qgis.PyQt.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTabWidget, QWidget,
-    QLabel, QComboBox, QDoubleSpinBox, QSpinBox, QPushButton, QFileDialog,
+    QLabel, QComboBox, QSpinBox, QPushButton, QFileDialog,
     QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox,
     QLineEdit, QGroupBox, QProgressBar, QMessageBox, QSizePolicy,
     QFormLayout, QStyledItemDelegate, QApplication
@@ -49,17 +49,15 @@ class Worker(QThread):
     progress = pyqtSignal(int)
     done     = pyqtSignal(object, dict)
 
-    def __init__(self, layer, tol, min_verts, max_verts):
+    def __init__(self, layer, min_dist, max_dist):
         super().__init__()
-        self.layer     = layer
-        self.tol       = tol
-        self.min_verts = min_verts
-        self.max_verts = max_verts
+        self.layer    = layer
+        self.min_dist = min_dist
+        self.max_dist = max_dist
 
     def run(self):
         result, stats = simplify_layer(
-            self.layer, self.tol, self.progress.emit,
-            self.min_verts, self.max_verts
+            self.layer, self.min_dist, self.max_dist, self.progress.emit
         )
         self.done.emit(result, stats)
 
@@ -78,7 +76,7 @@ class AgroDialog(QDialog):
     def _build(self):
         root = QVBoxLayout(self)
         tabs = QTabWidget()
-        tabs.addTab(self._tab_simpl(),  "1 · Simplificação")
+        tabs.addTab(self._tab_simpl(),  "1 · Padronização")
         tabs.addTab(self._tab_class(),  "2 · Classificação")
         tabs.addTab(self._tab_export(), "3 · Exportação")
         root.addWidget(tabs)
@@ -86,7 +84,7 @@ class AgroDialog(QDialog):
         self.status.setStyleSheet("color:gray;font-size:11px")
         root.addWidget(self.status)
 
-    # ── Aba 1: Simplificação ────────────────────────────────────
+    # ── Aba 1: Padronização ─────────────────────────────────────
     def _tab_simpl(self):
         w = QWidget()
         L = QVBoxLayout(w)
@@ -102,37 +100,28 @@ class AgroDialog(QDialog):
         r1.addWidget(self.cb)
         L.addWidget(g1)
 
-        g2 = QGroupBox("Douglas-Peucker (redução de vértices)")
-        r2 = QHBoxLayout(g2)
-        r2.addWidget(QLabel("Tolerância:"))
-        self.tol = QDoubleSpinBox()
-        self.tol.setRange(0.01, 100)
-        self.tol.setValue(1.0)
-        self.tol.setDecimals(2)
-        self.tol.setSuffix(" m")
-        r2.addWidget(self.tol)
-        r2.addStretch()
-        self.lbl_prev = QLabel("Vértices: —")
-        r2.addWidget(self.lbl_prev)
-        btn_prev = QPushButton("Preview")
-        btn_prev.clicked.connect(self._preview)
-        r2.addWidget(btn_prev)
-        L.addWidget(g2)
-
-        g3 = QGroupBox("Intervalo de vértices")
+        g3 = QGroupBox("Espaçamento entre vértices (m)")
         r3 = QHBoxLayout(g3)
         r3.addWidget(QLabel("Mínimo:"))
         self.sp_min = QSpinBox()
-        self.sp_min.setRange(2, 100)
+        self.sp_min.setRange(1, 100)
         self.sp_min.setValue(5)
-        self.sp_min.setToolTip("Linhas com menos vértices após simplificação revertem para a geometria original")
+        self.sp_min.setSuffix(" m")
+        self.sp_min.setToolTip(
+            "Vértices mais próximos que este valor serão removidos.\n"
+            "Garante espaçamento mínimo entre pontos consecutivos."
+        )
         r3.addWidget(self.sp_min)
         r3.addSpacing(16)
         r3.addWidget(QLabel("Máximo:"))
         self.sp_max = QSpinBox()
         self.sp_max.setRange(2, 500)
         self.sp_max.setValue(15)
-        self.sp_max.setToolTip("Linhas com mais vértices terão tolerância aumentada iterativamente até atingir o limite; as que não conseguirem são sinalizadas com ⚠")
+        self.sp_max.setSuffix(" m")
+        self.sp_max.setToolTip(
+            "Segmentos maiores que este valor receberão vértices intermediários.\n"
+            "Garante espaçamento máximo entre pontos consecutivos."
+        )
         r3.addWidget(self.sp_max)
         r3.addStretch()
         L.addWidget(g3)
@@ -141,7 +130,7 @@ class AgroDialog(QDialog):
         self.pb.setValue(0)
         L.addWidget(self.pb)
 
-        btn_run = QPushButton("Simplificar")
+        btn_run = QPushButton("Padronizar")
         btn_run.setStyleSheet("font-weight:bold;padding:6px")
         btn_run.clicked.connect(self._run_simpl)
         L.addWidget(btn_run)
@@ -244,30 +233,17 @@ class AgroDialog(QDialog):
         lid = self.cb.currentData()
         return QgsProject.instance().mapLayer(lid) if lid else None
 
-    def _preview(self):
-        lyr = self._cur_layer()
-        if not lyr:
-            return
-        tol = self.tol.value()
-        vb = va = 0
-        for feat in lyr.getFeatures():
-            g = feat.geometry()
-            if not g or g.isEmpty():
-                continue
-            vb += count_verts(g)
-            sg = g.simplify(tol)
-            va += count_verts(sg) if not sg.isEmpty() else count_verts(g)
-        pct = (1 - va / vb) * 100 if vb else 0
-        self.lbl_prev.setText(f"{vb:,} → {va:,}  (-{pct:.1f}%)")
-
     def _run_simpl(self):
         lyr = self._cur_layer()
         if not lyr:
             QMessageBox.warning(self, "AgroExport", "Selecione uma camada.")
             return
+        if self.sp_min.value() >= self.sp_max.value():
+            QMessageBox.warning(self, "AgroExport", "O espaçamento mínimo deve ser menor que o máximo.")
+            return
         self.pb.setValue(0)
         self.lbl_res.setText("Processando…")
-        self._worker = Worker(lyr, self.tol.value(), self.sp_min.value(), self.sp_max.value())
+        self._worker = Worker(lyr, self.sp_min.value(), self.sp_max.value())
         self._worker.progress.connect(self.pb.setValue)
         self._worker.done.connect(self._simpl_done)
         self._worker.start()
@@ -275,14 +251,12 @@ class AgroDialog(QDialog):
     def _simpl_done(self, result, stats):
         self.simplified = result
         QgsProject.instance().addMapLayer(result)
+        diff = stats['after'] - stats['before']
+        sinal = "+" if diff > 0 else ""
         txt = (f"{stats['features']} feições  ·  "
-               f"{stats['before']:,} → {stats['after']:,} vértices  (-{stats['pct']:.1f}%)")
-        if stats.get('clamped'):
-            txt += f"  ·  {stats['clamped']} revertidas (abaixo do mínimo)"
-        if stats.get('over_max'):
-            txt += f"  ·  ⚠ {stats['over_max']} acima do máximo"
+               f"{stats['before']:,} → {stats['after']:,} vértices  ({sinal}{diff:,})")
         self.lbl_res.setText(txt)
-        self.status.setText("Simplificação concluída.")
+        self.status.setText("Padronização concluída.")
 
     # ── Lógica aba 2 ──────────────────────────────────────────
     def _active_layer(self):
